@@ -1,0 +1,34 @@
+module Test where
+
+import Bank
+import Customer
+import Daml.Script
+
+
+test : Script ()
+test = script do
+  alice <- allocateParty "alice"
+  bob <- allocateParty "bob"
+  bank <- allocateParty "bank"
+  bankCid <- submit bank do createCmd Bank with owner = bank, customers = [alice, bob]
+
+  accountA <- submit alice do exerciseCmd bankCid OpenAccount with party = alice
+  accountB <- submit bob do exerciseCmd bankCid OpenAccount with party = bob
+
+  accountA <- submit bank do exerciseCmd bankCid Deposit with accountCid = accountA, amount = 100.0
+
+  customerA <- submit alice do createCmd Customer with party = alice, name = "Alice"
+  customerB <- submit bob do createCmd Customer with party = bob, name = "Bob"
+
+  sellOffer <- submit bob do exerciseCmd customerB NewSellOffer with observers = [alice], title = "paint house", description = "", price = 10.0
+  invoiceCid <- submit alice do exerciseCmd customerA TakeSellOffer with offer = sellOffer
+
+  (accountA, checkCid) <- submit alice do exerciseCmd customerA PayInvoice with accountCid = accountA, invoice = invoiceCid
+
+  submitMulti [bob, bank] [] do exerciseCmd checkCid Claim with accountCid = accountB
+  
+  pure ()
+  
+  
+
+

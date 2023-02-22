@@ -1,0 +1,43 @@
+module Customer where
+
+import Bussiness
+import Bank
+
+import DA.Date
+
+template Customer
+  with
+    party : Party
+    name : Text
+  where
+    signatory party
+    key party : Party
+    maintainer key
+
+    nonconsuming choice NewSellOffer : ContractId SellOffer
+      with
+        observers : [Party]
+        title : Text
+        description : Text
+        price : Decimal
+      controller party
+        do
+          now <- getTime
+          create SellOffer with seller = party, date = toDateUTC now, ..
+
+    nonconsuming choice TakeSellOffer : ContractId Invoice
+      with
+        offer : ContractId SellOffer
+      controller party
+        do
+          exercise offer DoTrade with tradePartner = party
+
+    nonconsuming choice PayInvoice : (ContractId Account, ContractId Check)
+      with
+        accountCid : ContractId Account
+        invoice : ContractId Invoice
+      controller party
+        do
+          Invoice{..} <- fetch invoice
+          assert (obligor == party)
+          exercise invoice Pay with ..

@@ -1,0 +1,83 @@
+module Bank where
+
+template Bank
+  with
+    owner : Party
+    customers : [Party]
+  where
+    signatory owner
+    key owner : Party
+    maintainer key
+    observer customers
+
+
+    nonconsuming choice OpenAccount : ContractId Account with
+       party : Party
+     controller party
+        do
+            accountCid <- lookupByKey @Account (owner, party)
+            case accountCid of
+              Some cid -> pure cid
+              None  -> create Account with issuer = owner, owner = party, credit = 0.0
+
+    nonconsuming choice Deposit : ContractId Account with
+        accountCid : ContractId Account
+        amount : Decimal
+     controller owner
+        do
+          assertMsg "invalid credit" (amount > 0.0)
+          Account{..} <- fetch accountCid
+          assert (issuer == this.owner)
+          archive accountCid
+          create Account with credit = credit + amount, ..
+
+    nonconsuming choice Withdraw : ContractId Account with
+       payerCid : ContractId Account
+       initiator : Party
+       amount : Decimal
+     controller initiator, owner
+        do
+          payer <- fetch payerCid
+          assert (payer.owner == initiator)
+          assert (payer.credit >= amount)
+          newPayerCid <- create Account with issuer = owner, owner = payer.owner, credit = payer.credit - amount
+          pure newPayerCid
+          
+          
+              
+template Account
+  with
+    issuer : Party
+    owner : Party
+    credit : Decimal
+  where
+    signatory issuer
+    observer owner
+    key (issuer, owner) : (Party, Party)
+    maintainer key._1 
+    
+    choice InitiateTransfer : (ContractId Account, ContractId Check) with
+       amount : Decimal
+       receiver : Party
+     controller owner
+        do
+          accountCid <- create this with credit = this.credit - amount
+          checkCid <- create Check with obligor = owner, bank = issuer, ..
+          pure (accountCid, checkCid)
+
+template Check
+  with
+    amount : Decimal
+    receiver : Party
+    obligor : Party
+    bank : Party
+  where
+    signatory obligor
+    observer obligor, receiver, bank
+
+    choice Claim : ContractId Account with
+        accountCid : ContractId Account
+      controller receiver, bank
+      do
+        exerciseByKey @Bank bank Deposit with ..
+    

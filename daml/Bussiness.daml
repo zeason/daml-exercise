@@ -1,0 +1,42 @@
+module Bussiness where
+
+import Bank
+
+template SellOffer
+  with
+    observers : [Party]
+    title : Text
+    description : Text
+    price : Decimal
+    seller : Party
+    date : Date
+  where
+    signatory seller
+    observer observers
+
+    choice DoTrade : ContractId Invoice
+      with
+        tradePartner : Party
+      controller tradePartner
+        do
+          assert $ tradePartner `elem` observers
+          create $ Invoice {owner = seller, obligor = tradePartner, amount = price, description = title}
+
+template Invoice
+  with
+    owner : Party
+    obligor : Party
+    amount : Decimal
+    description : Text
+  where
+    signatory obligor
+    observer owner
+
+    choice Pay : (ContractId Account, ContractId Check) with
+      accountCid : ContractId Account
+     controller obligor
+        do
+          account <- fetch accountCid
+          assertMsg "Insufficient balance" (account.credit >= amount)
+          exercise accountCid InitiateTransfer with receiver = owner, ..
+
